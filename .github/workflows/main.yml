@@ -29,7 +29,7 @@ jobs:
       - name: Extract project
         run: |
           mkdir extracted
-          unzip -q StudyAI_Custom_Haitham.zip -d extracted
+          unzip -q StudyAI_Custom_Haitham_V2.zip -d extracted
           echo "Files:"
           find extracted -maxdepth 3 -type f | head -100
 
