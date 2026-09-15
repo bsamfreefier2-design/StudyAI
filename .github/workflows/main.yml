@@ -26,39 +26,36 @@ jobs:
         with:
           gradle-version: "8.11.1"
 
-      - name: Extract project
+      - name: Extract V4 project
         run: |
-          mkdir extracted
-          unzip -q StudyAI_Custom_Haitham_V3.zip -d extracted
-          echo "Files:"
-          find extracted -maxdepth 3 -type f | head -100
+          rm -rf extracted
+          mkdir -p extracted
+          unzip -q "StudyAI_Custom_Haitham_V4_AI_Connected.zip" -d extracted
 
       - name: Find Android project
         run: |
-          ANDROID_DIR=$(find extracted -type f -name settings.gradle | head -1 | xargs dirname)
-          echo "ANDROID_DIR=$ANDROID_DIR" >> $GITHUB_ENV
+          ANDROID_DIR=$(find extracted -name settings.gradle -o -name settings.gradle.kts | head -n 1 | xargs dirname)
+          echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
           echo "Android project: $ANDROID_DIR"
 
-      - name: Build APK
+      - name: Build Public APK
         run: |
           cd "$ANDROID_DIR"
-          gradle assembleDebug --stacktrace
+          gradle assemblePublicEditionDebug --stacktrace
+
+      - name: Build Developer APK
+        run: |
+          cd "$ANDROID_DIR"
+          gradle assembleDeveloperEditionDebug --stacktrace
+
       - name: Upload Public APK
         uses: actions/upload-artifact@v4
         with:
-              name: StudyAI-Public
-              path: "**/build/outputs/apk/publicEdition/debug/*.apk"
+          name: StudyAI-Public
+          path: "**/build/outputs/apk/publicEdition/debug/*.apk"
 
       - name: Upload Developer APK
         uses: actions/upload-artifact@v4
         with:
-              name: StudyAI-Developer
-              path: "**/build/outputs/apk/developerEdition/debug/*.apk"
-      
-      
-        
-      
-        
-        
-          
-          
+          name: StudyAI-Developer
+          path: "**/build/outputs/apk/developerEdition/debug/*.apk"
