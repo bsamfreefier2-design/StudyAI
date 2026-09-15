@@ -43,9 +43,22 @@ jobs:
         run: |
           cd "$ANDROID_DIR"
           gradle assembleDebug --stacktrace
+          - name: Upload Public APK
+            uses: actions/upload-artifact@v4
+            with:
+              name: StudyAI-Public
+              path: "**/build/outputs/apk/publicEdition/debug/*.apk"
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: StudyAI-APK
-          path: "**/build/outputs/apk/debug/*.apk"
+          - name: Upload Developer APK
+            uses: actions/upload-artifact@v4
+            with:
+              name: StudyAI-Developer
+              path: "**/build/outputs/apk/developerEdition/debug/*.apk"
+      
+      
+        
+      
+        
+        
+          
+          
