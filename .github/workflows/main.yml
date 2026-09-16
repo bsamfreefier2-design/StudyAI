@@ -26,15 +26,12 @@ jobs:
         with:
           gradle-version: "8.11.1"
 
-      - name: Extract V4 project
+      - name: Extract V5 project
         run: |
           rm -rf extracted
           mkdir -p extracted
-          unzip -q "StudyAI_Custom_Haitham_V4_AI_Connected.zip" -d extracted
-      - name: Find Backend files
-        run: |
-            echo "=== BACKEND FILES ==="
-            find extracted -type f | grep -E '/(main.py|requirements.txt)$' || true    
+          unzip -q "StudyAI_Custom_Haitham_V5_Pharmacy_AI.zip" -d extracted
+
       - name: Find Android project
         run: |
           ANDROID_DIR=$(find extracted -name settings.gradle -o -name settings.gradle.kts | head -n 1 | xargs dirname)
