@@ -1,11 +1,11 @@
-name: Build Study AI V10.3.1
+name: Build Study AI V10.3.2 Release
 
 on:
   workflow_dispatch:
 
   push:
     paths:
-      - "StudyAI_V10_3_1_LAYOUT_DEVICEID_FIXED.zip"
+      - "StudyAI_V10_3_2_FINAL_REVIEW.zip"
       - ".github/workflows/main.yml"
 
 permissions:
@@ -17,62 +17,56 @@ jobs:
 
     steps:
 
-      # ==============================
-      # 1. Download project
-      # ==============================
+      # =========================
+      # Checkout
+      # =========================
       - name: Checkout repository
         uses: actions/checkout@v4
 
-
-      # ==============================
-      # 2. Java 17
-      # ==============================
+      # =========================
+      # Java 17
+      # =========================
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-
-      # ==============================
-      # 3. Gradle
-      # ==============================
+      # =========================
+      # Gradle
+      # =========================
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.11.1"
 
-
-      # ==============================
-      # 4. Find ZIP
-      # ==============================
+      # =========================
+      # Find ZIP
+      # =========================
       - name: Find StudyAI ZIP
-        id: zip
+        id: project
         shell: bash
         run: |
           set -e
 
           ZIP=$(find . -type f \
-            -name "StudyAI_V10_3_1_LAYOUT_DEVICEID_FIXED.zip" \
+            -name "StudyAI_V10_3_2_FINAL_REVIEW.zip" \
             -print -quit)
 
           if [ -z "$ZIP" ]; then
-            echo "ERROR: ZIP file not found."
+            echo "ERROR: StudyAI V10.3.2 ZIP not found."
             echo "Available ZIP files:"
             find . -type f -name "*.zip" -print
             exit 1
           fi
 
-          echo "ZIP found:"
-          echo "$ZIP"
+          echo "Found: $ZIP"
+          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
 
-          echo "path=$ZIP" >> "$GITHUB_OUTPUT"
-
-
-      # ==============================
-      # 5. Extract
-      # ==============================
-      - name: Extract StudyAI
+      # =========================
+      # Extract
+      # =========================
+      - name: Extract project
         shell: bash
         run: |
           set -e
@@ -81,13 +75,12 @@ jobs:
           mkdir -p extracted
 
           unzip -q \
-            "${{ steps.zip.outputs.path }}" \
+            "${{ steps.project.outputs.zip }}" \
             -d extracted
 
-
-      # ==============================
-      # 6. Find Android project
-      # ==============================
+      # =========================
+      # Find Android project
+      # =========================
       - name: Find Android project
         id: android
         shell: bash
@@ -104,9 +97,7 @@ jobs:
 
           if [ -z "$SETTINGS" ]; then
             echo "ERROR: Android project not found."
-
-            find extracted -maxdepth 6 -type f | head -300
-
+            find extracted -maxdepth 7 -type f | head -300
             exit 1
           fi
 
@@ -117,10 +108,9 @@ jobs:
 
           echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
 
-
-      # ==============================
-      # 7. Prepare Gradle
-      # ==============================
+      # =========================
+      # Prepare Gradle
+      # =========================
       - name: Prepare Gradle
         shell: bash
         run: |
@@ -132,10 +122,9 @@ jobs:
             chmod +x ./gradlew
           fi
 
-
-      # ==============================
-      # 8. Create signing keystore
-      # ==============================
+      # =========================
+      # Create signing keystore
+      # =========================
       - name: Create signing keystore
         shell: bash
         env:
@@ -153,13 +142,12 @@ jobs:
             exit 1
           fi
 
-          echo "Keystore created."
+          echo "Keystore ready."
 
-
-      # ==============================
-      # 9. Clean
-      # ==============================
-      - name: Clean
+      # =========================
+      # Clean
+      # =========================
+      - name: Clean project
         shell: bash
         run: |
           set -e
@@ -172,10 +160,9 @@ jobs:
             gradle clean --no-daemon
           fi
 
-
-      # ==============================
-      # 10. Build Release
-      # ==============================
+      # =========================
+      # Build Release
+      # =========================
       - name: Build Release APK
         shell: bash
         run: |
@@ -183,7 +170,10 @@ jobs:
 
           cd "${{ steps.android.outputs.dir }}"
 
-          echo "Building Study AI V10.3.1 Release..."
+          echo "======================================"
+          echo " Study AI V10.3.2"
+          echo " Release Build"
+          echo "======================================"
 
           if [ -f "./gradlew" ]; then
             ./gradlew assembleRelease \
@@ -195,10 +185,9 @@ jobs:
               --stacktrace
           fi
 
-
-      # ==============================
-      # 11. Find APK
-      # ==============================
+      # =========================
+      # Find APK
+      # =========================
       - name: Find Release APK
         id: apk
         shell: bash
@@ -228,10 +217,9 @@ jobs:
 
           echo "path=$APK" >> "$GITHUB_OUTPUT"
 
-
-      # ==============================
-      # 12. Android Build Tools
-      # ==============================
+      # =========================
+      # Android Build Tools
+      # =========================
       - name: Locate Android tools
         id: tools
         shell: bash
@@ -263,10 +251,9 @@ jobs:
           echo "zipalign=$ZIPALIGN" >> "$GITHUB_OUTPUT"
           echo "apksigner=$APKSIGNER" >> "$GITHUB_OUTPUT"
 
-
-      # ==============================
-      # 13. Align APK
-      # ==============================
+      # =========================
+      # Align APK
+      # =========================
       - name: Align APK
         id: aligned
         shell: bash
@@ -274,7 +261,7 @@ jobs:
           set -e
 
           INPUT="${{ steps.apk.outputs.path }}"
-          OUTPUT="$RUNNER_TEMP/studyai/StudyAI-V10.3.1-aligned.apk"
+          OUTPUT="$RUNNER_TEMP/studyai/StudyAI-V10.3.2-aligned.apk"
 
           "${{ steps.tools.outputs.zipalign }}" \
             -f \
@@ -283,13 +270,14 @@ jobs:
             "$INPUT" \
             "$OUTPUT"
 
+          test -s "$OUTPUT"
+
           echo "path=$OUTPUT" >> "$GITHUB_OUTPUT"
 
-
-      # ==============================
-      # 14. Sign APK
-      # ==============================
-      - name: Sign APK
+      # =========================
+      # Sign APK
+      # =========================
+      - name: Sign Release APK
         id: signed
         shell: bash
         env:
@@ -299,12 +287,13 @@ jobs:
           set -e
 
           INPUT="${{ steps.aligned.outputs.path }}"
-          OUTPUT="$RUNNER_TEMP/studyai/StudyAI-Universal-V10.3.1.apk"
+          OUTPUT="$RUNNER_TEMP/studyai/StudyAI-Universal-V10.3.2.apk"
 
           "${{ steps.tools.outputs.apksigner }}" sign \
             --ks "$RUNNER_TEMP/studyai/studyai-release.jks" \
             --ks-key-alias "$KEY_ALIAS" \
             --ks-pass "pass:$KEYSTORE_PASSWORD" \
+            --key-pass "pass:$KEYSTORE_PASSWORD" \
             --out "$OUTPUT" \
             "$INPUT"
 
@@ -315,13 +304,10 @@ jobs:
 
           echo "path=$OUTPUT" >> "$GITHUB_OUTPUT"
 
-          echo "APK signed successfully."
-
-
-      # ==============================
-      # 15. Verify signature
-      # ==============================
-      - name: Verify signature
+      # =========================
+      # Verify signature
+      # =========================
+      - name: Verify APK signature
         shell: bash
         run: |
           set -e
@@ -330,32 +316,34 @@ jobs:
             --verbose \
             "${{ steps.signed.outputs.path }}"
 
-          echo "Signature verified successfully."
+          echo "======================================"
+          echo " SIGNATURE VERIFIED"
+          echo "======================================"
 
-
-      # ==============================
-      # 16. Show APK
-      # ==============================
-      - name: APK information
+      # =========================
+      # Final information
+      # =========================
+      - name: Final APK information
         shell: bash
         run: |
           set -e
 
-          echo "=============================="
-          echo "Study AI V10.3.1"
-          echo "Universal Release APK"
-          echo "=============================="
+          APK="${{ steps.signed.outputs.path }}"
 
-          ls -lh "${{ steps.signed.outputs.path }}"
+          echo "======================================"
+          echo " Study AI V10.3.2"
+          echo " Universal Release APK"
+          echo "======================================"
 
+          ls -lh "$APK"
 
-      # ==============================
-      # 17. Upload final APK
-      # ==============================
-      - name: Upload Study AI V10.3.1
+      # =========================
+      # Upload Artifact
+      # =========================
+      - name: Upload Universal APK
         uses: actions/upload-artifact@v4
         with:
-          name: StudyAI-Universal-V10.3.1
+          name: StudyAI-Universal-V10.3.2
           path: ${{ steps.signed.outputs.path }}
           if-no-files-found: error
           retention-days: 30
