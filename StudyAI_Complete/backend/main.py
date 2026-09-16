@@ -527,3 +527,412 @@ def reset():
         "mime": None,
     })
     return {"ok": True}
+
+
+# ============================================================
+# STUDY AI DEVICE ACTIVATION / DEVELOPER CONTROL
+# ============================================================
+# This section restores the developer activation API while keeping
+# AI chat independent from uploaded files.
+#
+# Storage is a local JSON file. On Render Free, local disk is not a
+# guaranteed permanent database; for a production multi-customer
+# system, move this store to a persistent DB. The API is designed so
+# that such a migration can be done without changing the Android UI.
+
+from datetime import datetime, timedelta, timezone
+
+ACTIVATION_DB = Path(os.getenv("ACTIVATION_DB_PATH", "/tmp/studyai_licenses.json"))
+ADMIN_KEY = os.getenv("STUDYAI_ADMIN_KEY", "")
+
+def _utc_now():
+    return datetime.now(timezone.utc)
+
+def _iso(dt):
+    return dt.astimezone(timezone.utc).isoformat()
+
+def _parse_date(value):
+    if not value:
+        return None
+    value = str(value).strip()
+    # Accept YYYY-MM-DD and common Android date formats.
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"):
+        try:
+            return datetime.strptime(value, fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            pass
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+    except Exception:
+        return None
+
+def _load_licenses():
+    try:
+        if ACTIVATION_DB.exists():
+            data = json.loads(ACTIVATION_DB.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        pass
+
+    # Preserve the device IDs that were previously activated in this project.
+    seeded = {
+        "c73ea14226b27b90": {
+            "device_id": "c73ea14226b27b90",
+            "name": "مستخدم",
+            "start_date": "2026-09-16",
+            "expiry": "2027-10-10",
+            "active": True,
+            "status": "active",
+            "duration": "manual",
+            "created_at": "2026-09-16T00:00:00+00:00",
+            "updated_at": "2026-09-16T00:00:00+00:00",
+        },
+        "1683b276a8ec2aaf": {
+            "device_id": "1683b276a8ec2aaf",
+            "name": "مستخدم",
+            "start_date": "2026-09-16",
+            "expiry": "2027-10-10",
+            "active": True,
+            "status": "active",
+            "duration": "manual",
+            "created_at": "2026-09-16T00:00:00+00:00",
+            "updated_at": "2026-09-16T00:00:00+00:00",
+        },
+        "8ddb52be1b098611": {
+            "device_id": "8ddb52be1b098611",
+            "name": "مستخدم",
+            "start_date": "2026-09-16",
+            "expiry": "2027-10-10",
+            "active": True,
+            "status": "active",
+            "duration": "manual",
+            "created_at": "2026-09-16T00:00:00+00:00",
+            "updated_at": "2026-09-16T00:00:00+00:00",
+        },
+    }
+    return seeded
+
+licenses = _load_licenses()
+
+def _save_licenses():
+    try:
+        ACTIVATION_DB.parent.mkdir(parents=True, exist_ok=True)
+        tmp = ACTIVATION_DB.with_suffix(".tmp")
+        tmp.write_text(
+            json.dumps(licenses, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        tmp.replace(ACTIVATION_DB)
+    except Exception:
+        # The service should still answer even when the filesystem is read-only.
+        pass
+
+def _normalize_device_id(value):
+    return str(value or "").strip().lower()
+
+def _admin_ok(key):
+    # Never log the key.
+    return bool(ADMIN_KEY) and str(key or "") == ADMIN_KEY
+
+def _license_status(record):
+    if not record:
+        return {
+            "active": False,
+            "status": "not_found",
+            "message": "الجهاز غير مسجل.",
+        }
+
+    expiry = _parse_date(record.get("expiry"))
+    now = _utc_now()
+
+    if not record.get("active", False):
+        return {
+            **record,
+            "active": False,
+            "status": "revoked",
+            "message": "التفعيل ملغى.",
+        }
+
+    if expiry and expiry < now:
+        record["active"] = False
+        record["status"] = "expired"
+        return {
+            **record,
+            "active": False,
+            "status": "expired",
+            "message": "انتهى الاشتراك.",
+        }
+
+    return {
+        **record,
+        "active": True,
+        "status": "active",
+        "message": "الجهاز مفعل.",
+    }
+
+class LicenseRequest(BaseModel):
+    device_id: str = ""
+    name: Optional[str] = None
+    password: Optional[str] = None
+    expiry: Optional[str] = None
+    start_date: Optional[str] = None
+    duration: Optional[str] = None
+    days: Optional[int] = None
+    admin_key: Optional[str] = None
+
+def _duration_days(duration, days=None):
+    if days is not None:
+        try:
+            return max(1, int(days))
+        except Exception:
+            pass
+
+    d = str(duration or "").strip().lower()
+    mapping = {
+        "7": 7,
+        "7 days": 7,
+        "7 يوم": 7,
+        "14": 14,
+        "14 days": 14,
+        "14 يوم": 14,
+        "1 month": 30,
+        "month": 30,
+        "1 month/شهر": 30,
+        "30": 30,
+        "2 months": 60,
+        "2 month": 60,
+        "60": 60,
+    }
+    return mapping.get(d)
+
+def _activate_license(req: LicenseRequest, require_admin=True):
+    device_id = _normalize_device_id(req.device_id)
+    if not device_id:
+        raise HTTPException(400, "Device ID مطلوب.")
+
+    if require_admin:
+        key = req.admin_key or req.password
+        if not _admin_ok(key):
+            raise HTTPException(403, "مفتاح المطور غير صحيح.")
+
+    now = _utc_now()
+    start = _parse_date(req.start_date) or now
+
+    expiry = _parse_date(req.expiry)
+    days = _duration_days(req.duration, req.days)
+    if not expiry and days:
+        expiry = start + timedelta(days=days)
+
+    if not expiry:
+        # Default activation is 30 days when no expiry/duration is supplied.
+        expiry = start + timedelta(days=30)
+
+    record = {
+        "device_id": device_id,
+        "name": (req.name or "مستخدم").strip(),
+        "start_date": start.date().isoformat(),
+        "expiry": expiry.date().isoformat(),
+        "active": True,
+        "status": "active",
+        "duration": req.duration or (f"{days} days" if days else "manual"),
+        "created_at": licenses.get(device_id, {}).get("created_at", _iso(now)),
+        "updated_at": _iso(now),
+    }
+    licenses[device_id] = record
+    _save_licenses()
+
+    return {
+        "ok": True,
+        "success": True,
+        "activated": True,
+        "active": True,
+        "status": "active",
+        "device_id": device_id,
+        "name": record["name"],
+        "start_date": record["start_date"],
+        "expiry": record["expiry"],
+        "message": "تم تفعيل الجهاز بنجاح.",
+    }
+
+# User/device activation endpoint aliases.
+@app.post("/activate")
+@app.post("/activation")
+@app.post("/device/activate")
+@app.post("/device/activation")
+@app.post("/license/activate")
+@app.post("/api/license/activate")
+def activate_license(req: LicenseRequest):
+    return _activate_license(req, require_admin=True)
+
+@app.get("/activate")
+def activate_get(
+    device_id: str = "",
+    password: str = "",
+    name: str = "",
+    expiry: str = "",
+):
+    req = LicenseRequest(
+        device_id=device_id,
+        password=password,
+        name=name,
+        expiry=expiry,
+    )
+    return _activate_license(req, require_admin=True)
+
+# Device status endpoints. These do not expose the admin key.
+def _device_status(device_id):
+    device_id = _normalize_device_id(device_id)
+    if not device_id:
+        raise HTTPException(400, "Device ID مطلوب.")
+
+    record = licenses.get(device_id)
+    result = _license_status(record)
+
+    if record and result.get("status") == "expired":
+        licenses[device_id] = result
+        _save_licenses()
+
+    return {
+        "ok": True,
+        "success": True,
+        "device_id": device_id,
+        "active": bool(result.get("active", False)),
+        "activated": bool(result.get("active", False)),
+        "status": result.get("status"),
+        "name": result.get("name"),
+        "start_date": result.get("start_date"),
+        "expiry": result.get("expiry"),
+        "message": result.get("message"),
+    }
+
+@app.get("/device/status")
+@app.get("/device/check")
+@app.get("/activation/status")
+@app.get("/license/status")
+@app.get("/api/license/status")
+@app.get("/check-device")
+def device_status(device_id: str = ""):
+    return _device_status(device_id)
+
+@app.post("/device/status")
+@app.post("/device/check")
+@app.post("/activation/status")
+@app.post("/license/status")
+@app.post("/api/license/status")
+@app.post("/check-device")
+def device_status_post(req: LicenseRequest):
+    return _device_status(req.device_id)
+
+# Deactivate/revoke.
+@app.post("/deactivate")
+@app.post("/device/deactivate")
+@app.post("/activation/deactivate")
+@app.post("/license/deactivate")
+@app.post("/api/license/deactivate")
+def deactivate_license(req: LicenseRequest):
+    device_id = _normalize_device_id(req.device_id)
+    if not device_id:
+        raise HTTPException(400, "Device ID مطلوب.")
+    if not _admin_ok(req.admin_key or req.password):
+        raise HTTPException(403, "مفتاح المطور غير صحيح.")
+
+    if device_id in licenses:
+        licenses[device_id]["active"] = False
+        licenses[device_id]["status"] = "revoked"
+        licenses[device_id]["updated_at"] = _iso(_utc_now())
+        _save_licenses()
+
+    return {
+        "ok": True,
+        "success": True,
+        "active": False,
+        "activated": False,
+        "status": "revoked",
+        "device_id": device_id,
+        "message": "تم إلغاء التفعيل.",
+    }
+
+# Extend/update an existing license.
+@app.post("/extend")
+@app.post("/device/extend")
+@app.post("/activation/extend")
+@app.post("/license/extend")
+@app.post("/api/license/extend")
+def extend_license(req: LicenseRequest):
+    device_id = _normalize_device_id(req.device_id)
+    if not device_id:
+        raise HTTPException(400, "Device ID مطلوب.")
+    if not _admin_ok(req.admin_key or req.password):
+        raise HTTPException(403, "مفتاح المطور غير صحيح.")
+
+    old = licenses.get(device_id)
+    if not old:
+        raise HTTPException(404, "Device ID غير موجود.")
+
+    base = _parse_date(old.get("expiry")) or _utc_now()
+    days = _duration_days(req.duration, req.days) or 30
+    new_expiry = base + timedelta(days=days)
+
+    old["expiry"] = new_expiry.date().isoformat()
+    old["active"] = True
+    old["status"] = "active"
+    old["updated_at"] = _iso(_utc_now())
+    if req.name:
+        old["name"] = req.name.strip()
+    licenses[device_id] = old
+    _save_licenses()
+
+    return {
+        "ok": True,
+        "success": True,
+        "active": True,
+        "status": "active",
+        "device_id": device_id,
+        "expiry": old["expiry"],
+        "message": "تم تمديد الاشتراك.",
+    }
+
+# Developer/admin information.
+@app.get("/admin/devices")
+@app.get("/admin/licenses")
+@app.get("/admin/activations")
+def admin_devices(admin_key: str = ""):
+    if not _admin_ok(admin_key):
+        raise HTTPException(403, "مفتاح المطور غير صحيح.")
+
+    rows = []
+    for device_id, record in licenses.items():
+        rows.append(_license_status(record))
+    return {
+        "ok": True,
+        "count": len(rows),
+        "devices": rows,
+        "activations": rows,
+    }
+
+@app.post("/admin/devices")
+@app.post("/admin/licenses")
+@app.post("/admin/activations")
+def admin_devices_post(req: LicenseRequest):
+    if not _admin_ok(req.admin_key or req.password):
+        raise HTTPException(403, "مفتاح المطور غير صحيح.")
+    rows = [_license_status(r) for r in licenses.values()]
+    return {"ok": True, "count": len(rows), "devices": rows, "activations": rows}
+
+@app.get("/admin/device")
+@app.get("/admin/details")
+@app.get("/admin/license")
+def admin_details(device_id: str = "", admin_key: str = ""):
+    if not _admin_ok(admin_key):
+        raise HTTPException(403, "مفتاح المطور غير صحيح.")
+    return _device_status(device_id)
+
+# Health includes activation subsystem without exposing secrets.
+@app.get("/activation/health")
+def activation_health():
+    return {
+        "ok": True,
+        "activation_system": True,
+        "stored_devices": len(licenses),
+        "admin_configured": bool(ADMIN_KEY),
+    }
