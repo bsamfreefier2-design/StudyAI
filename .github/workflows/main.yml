@@ -26,11 +26,11 @@ jobs:
         with:
           gradle-version: "8.11.1"
 
-      - name: Extract V6 UI FIXED project
+      - name: Extract V6 AI CONNECTED project
         run: |
           rm -rf extracted
           mkdir -p extracted
-          unzip -q "StudyAI_Custom_Haitham_V6_UI_FIXED.zip" -d extracted
+          unzip -q "StudyAI_Custom_Haitham_V6_AI_CONNECTED.zip" -d extracted
 
       - name: Find Android project
         run: |
