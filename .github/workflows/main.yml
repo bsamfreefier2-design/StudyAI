@@ -1,10 +1,10 @@
-name: Build Study AI APK
+name: Build Study AI V10 APK
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - "*.zip"
+      - "StudyAI_V10_*.zip"
       - ".github/workflows/main.yml"
 
 jobs:
@@ -26,11 +26,11 @@ jobs:
         with:
           gradle-version: "8.11.1"
 
-      - name: Extract V9 project
+      - name: Extract V10 project
         run: |
           rm -rf extracted
           mkdir -p extracted
-          unzip -q "StudyAI_Custom_Haitham_V9_EN_AR_DRUGS_NOTIFICATIONS.zip" -d extracted
+          unzip -q "StudyAI_V10_UNIVERSAL_LICENSED.zip" -d extracted
 
       - name: Find Android project
         run: |
@@ -38,32 +38,14 @@ jobs:
           echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
           echo "Android project: $ANDROID_DIR"
 
-      - name: Check Android project
+      - name: Build single universal APK
         run: |
           cd "$ANDROID_DIR"
-          pwd
-          ls -la
+          gradle assembleDebug --stacktrace
 
-      - name: Build Public APK
-        run: |
-          cd "$ANDROID_DIR"
-          gradle assemblePublicEditionDebug --stacktrace
-
-      - name: Build Developer APK
-        run: |
-          cd "$ANDROID_DIR"
-          gradle assembleDeveloperEditionDebug --stacktrace
-
-      - name: Upload Public APK
+      - name: Upload Study AI APK
         uses: actions/upload-artifact@v4
         with:
-          name: StudyAI-Public
-          path: "**/build/outputs/apk/publicEdition/debug/*.apk"
-          if-no-files-found: error
-
-      - name: Upload Developer APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: StudyAI-Developer
-          path: "**/build/outputs/apk/developerEdition/debug/*.apk"
+          name: StudyAI-Universal
+          path: "**/build/outputs/apk/debug/*.apk"
           if-no-files-found: error
