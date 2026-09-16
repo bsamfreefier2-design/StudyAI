@@ -1,10 +1,11 @@
-name: Build Study AI V10.1 APK
+name: Build Study AI V10.2 APK
 
 on:
   workflow_dispatch:
+
   push:
     paths:
-      - "StudyAI_V10_1_*.zip"
+      - "StudyAI_V10_2*.zip"
       - ".github/workflows/main.yml"
 
 jobs:
@@ -12,40 +13,178 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Get project
+
+      # 1. تحميل المشروع
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Java
+      # 2. Java 17
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
+      # 3. Gradle 8.11.1
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.11.1"
 
-      - name: Extract V10.1 project
+      # 4. البحث عن ملف V10.2
+      - name: Find V10.2 ZIP
+        id: find_zip
+        shell: bash
         run: |
+          set -e
+
+          echo "Searching for StudyAI V10.2 ZIP..."
+
+          ZIP=$(find . -maxdepth 3 -type f \
+            -name "StudyAI_V10_2*.zip" \
+            -print -quit)
+
+          if [ -z "$ZIP" ]; then
+            echo "ERROR: StudyAI V10.2 ZIP was not found."
+            echo "Files in repository:"
+            find . -maxdepth 3 -type f | head -100
+            exit 1
+          fi
+
+          echo "Found:"
+          echo "$ZIP"
+
+          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+
+      # 5. فك الضغط
+      - name: Extract V10.2
+        shell: bash
+        run: |
+          set -e
+
           rm -rf extracted
           mkdir -p extracted
-          unzip -q "StudyAI_V10_1_TOKEN_JSON_FIXED.zip" -d extracted
 
+          unzip -q "${{ steps.find_zip.outputs.zip }}" -d extracted
+
+          echo "Extraction completed."
+
+      # 6. البحث عن مشروع Android
       - name: Find Android project
+        id: android_project
+        shell: bash
         run: |
-          ANDROID_DIR=$(find extracted -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) -print -quit | xargs dirname)
-          echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
-          echo "Android project: $ANDROID_DIR"
+          set -e
 
-      - name: Build universal APK
+          echo "Searching for Android project..."
+
+          ANDROID_DIR=""
+
+          SETTINGS_FILE=$(find extracted -type f \
+            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            -print -quit)
+
+          if [ -n "$SETTINGS_FILE" ]; then
+            ANDROID_DIR=$(dirname "$SETTINGS_FILE")
+          fi
+
+          if [ -z "$ANDROID_DIR" ]; then
+            echo "ERROR: Android project was not found."
+            echo "Extracted files:"
+            find extracted -maxdepth 5 -type f | head -150
+            exit 1
+          fi
+
+          echo "Android project:"
+          echo "$ANDROID_DIR"
+
+          echo "dir=$ANDROID_DIR" >> "$GITHUB_OUTPUT"
+
+      # 7. التأكد من Gradle Wrapper
+      - name: Prepare Gradle Wrapper
+        shell: bash
         run: |
-          cd "$ANDROID_DIR"
-          gradle assembleDebug --stacktrace
+          set -e
 
-      - name: Upload Study AI APK
+          cd "${{ steps.android_project.outputs.dir }}"
+
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            echo "Gradle wrapper found."
+          else
+            echo "Gradle wrapper not found."
+            echo "Using installed Gradle 8.11.1."
+          fi
+
+      # 8. تنظيف المشروع
+      - name: Clean project
+        shell: bash
+        run: |
+          set -e
+
+          cd "${{ steps.android_project.outputs.dir }}"
+
+          if [ -f "./gradlew" ]; then
+            ./gradlew clean --no-daemon
+          else
+            gradle clean --no-daemon
+          fi
+
+      # 9. بناء APK
+      - name: Build Universal APK
+        shell: bash
+        run: |
+          set -e
+
+          cd "${{ steps.android_project.outputs.dir }}"
+
+          echo "Building Study AI V10.2..."
+
+          if [ -f "./gradlew" ]; then
+            ./gradlew assembleDebug \
+              --stacktrace \
+              --no-daemon
+          else
+            gradle assembleDebug \
+              --stacktrace \
+              --no-daemon
+          fi
+
+          echo "Build completed."
+
+      # 10. البحث عن APK الناتج
+      - name: Find generated APK
+        id: find_apk
+        shell: bash
+        run: |
+          set -e
+
+          echo "Searching for generated APK..."
+
+          APK=$(find "${{ steps.android_project.outputs.dir }}" \
+            -type f \
+            -name "*.apk" \
+            -print -quit)
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: APK was not generated."
+
+            echo "Build directory:"
+            find "${{ steps.android_project.outputs.dir }}" \
+              -type f | head -200
+
+            exit 1
+          fi
+
+          echo "APK found:"
+          echo "$APK"
+
+          echo "apk=$APK" >> "$GITHUB_OUTPUT"
+
+      # 11. رفع APK كـ Artifact
+      - name: Upload Study AI V10.2
         uses: actions/upload-artifact@v4
         with:
-          name: StudyAI-Universal-V10.1
-          path: "**/build/outputs/apk/debug/*.apk"
+          name: StudyAI-Universal-V10.2
+          path: ${{ steps.find_apk.outputs.apk }}
           if-no-files-found: error
