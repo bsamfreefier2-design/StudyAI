@@ -1,11 +1,11 @@
-name: Build Study AI V10.2 APK
+name: Build Study AI V10.2 Complete Stable
 
 on:
   workflow_dispatch:
 
   push:
     paths:
-      - "StudyAI_V10_2*.zip"
+      - "StudyAI_V10_2_COMPLETE_STABLE.zip"
       - ".github/workflows/main.yml"
 
 jobs:
@@ -14,62 +14,83 @@ jobs:
 
     steps:
 
-      # 1. تحميل المشروع
+      # ==============================
+      # 1. Checkout
+      # ==============================
       - name: Checkout repository
         uses: actions/checkout@v4
 
+
+      # ==============================
       # 2. Java 17
+      # ==============================
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
+
+      # ==============================
       # 3. Gradle 8.11.1
+      # ==============================
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.11.1"
 
-      # 4. البحث عن ملف V10.2
-      - name: Find V10.2 ZIP
+
+      # ==============================
+      # 4. Find V10.2 ZIP
+      # ==============================
+      - name: Find V10.2 project
         id: find_zip
         shell: bash
         run: |
           set -e
 
-          echo "Searching for StudyAI V10.2 ZIP..."
+          echo "Searching for Study AI V10.2..."
 
           ZIP=$(find . -maxdepth 3 -type f \
-            -name "StudyAI_V10_2*.zip" \
+            -name "StudyAI_V10_2_COMPLETE_STABLE.zip" \
             -print -quit)
 
           if [ -z "$ZIP" ]; then
-            echo "ERROR: StudyAI V10.2 ZIP was not found."
-            echo "Files in repository:"
-            find . -maxdepth 3 -type f | head -100
+            echo "ERROR: StudyAI_V10_2_COMPLETE_STABLE.zip not found."
+            echo ""
+            echo "Files available:"
+            find . -maxdepth 3 -type f | head -150
             exit 1
           fi
 
-          echo "Found:"
+          echo "Found ZIP:"
           echo "$ZIP"
 
           echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
 
-      # 5. فك الضغط
-      - name: Extract V10.2
+
+      # ==============================
+      # 5. Extract Project
+      # ==============================
+      - name: Extract V10.2 project
         shell: bash
         run: |
           set -e
 
           rm -rf extracted
+
           mkdir -p extracted
 
-          unzip -q "${{ steps.find_zip.outputs.zip }}" -d extracted
+          unzip -q \
+            "${{ steps.find_zip.outputs.zip }}" \
+            -d extracted
 
-          echo "Extraction completed."
+          echo "Project extracted successfully."
 
-      # 6. البحث عن مشروع Android
+
+      # ==============================
+      # 6. Find Android Project
+      # ==============================
       - name: Find Android project
         id: android_project
         shell: bash
@@ -78,45 +99,64 @@ jobs:
 
           echo "Searching for Android project..."
 
-          ANDROID_DIR=""
-
           SETTINGS_FILE=$(find extracted -type f \
-            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            \( \
+              -name "settings.gradle" \
+              -o \
+              -name "settings.gradle.kts" \
+            \) \
             -print -quit)
 
-          if [ -n "$SETTINGS_FILE" ]; then
-            ANDROID_DIR=$(dirname "$SETTINGS_FILE")
-          fi
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "ERROR: Android project not found."
 
-          if [ -z "$ANDROID_DIR" ]; then
-            echo "ERROR: Android project was not found."
+            echo ""
             echo "Extracted files:"
-            find extracted -maxdepth 5 -type f | head -150
+            find extracted -maxdepth 6 -type f | head -250
+
             exit 1
           fi
 
-          echo "Android project:"
+          ANDROID_DIR=$(dirname "$SETTINGS_FILE")
+
+          echo "Android project found:"
           echo "$ANDROID_DIR"
 
           echo "dir=$ANDROID_DIR" >> "$GITHUB_OUTPUT"
 
-      # 7. التأكد من Gradle Wrapper
-      - name: Prepare Gradle Wrapper
+
+      # ==============================
+      # 7. Check Project
+      # ==============================
+      - name: Check Android project
         shell: bash
         run: |
           set -e
 
           cd "${{ steps.android_project.outputs.dir }}"
 
+          echo "Android project directory:"
+          pwd
+
+          echo ""
+          echo "Project files:"
+          ls -la
+
+          echo ""
+          echo "Checking Gradle..."
+
           if [ -f "./gradlew" ]; then
             chmod +x ./gradlew
             echo "Gradle wrapper found."
           else
             echo "Gradle wrapper not found."
-            echo "Using installed Gradle 8.11.1."
+            echo "System Gradle will be used."
           fi
 
-      # 8. تنظيف المشروع
+
+      # ==============================
+      # 8. Clean
+      # ==============================
       - name: Clean project
         shell: bash
         run: |
@@ -125,63 +165,108 @@ jobs:
           cd "${{ steps.android_project.outputs.dir }}"
 
           if [ -f "./gradlew" ]; then
-            ./gradlew clean --no-daemon
+            ./gradlew clean \
+              --no-daemon \
+              --stacktrace
           else
-            gradle clean --no-daemon
+            gradle clean \
+              --no-daemon \
+              --stacktrace
           fi
 
-      # 9. بناء APK
-      - name: Build Universal APK
+
+      # ==============================
+      # 9. Build APK
+      # ==============================
+      - name: Build Study AI Universal APK
         shell: bash
         run: |
           set -e
 
           cd "${{ steps.android_project.outputs.dir }}"
 
-          echo "Building Study AI V10.2..."
+          echo "======================================"
+          echo " Building Study AI V10.2"
+          echo " Universal APK"
+          echo "======================================"
 
           if [ -f "./gradlew" ]; then
+
             ./gradlew assembleDebug \
-              --stacktrace \
-              --no-daemon
+              --no-daemon \
+              --stacktrace
+
           else
+
             gradle assembleDebug \
-              --stacktrace \
-              --no-daemon
+              --no-daemon \
+              --stacktrace
+
           fi
 
-          echo "Build completed."
+          echo ""
+          echo "Build completed successfully."
 
-      # 10. البحث عن APK الناتج
+
+      # ==============================
+      # 10. Find APK
+      # ==============================
       - name: Find generated APK
         id: find_apk
         shell: bash
         run: |
           set -e
 
-          echo "Searching for generated APK..."
+          echo "Searching for APK..."
 
-          APK=$(find "${{ steps.android_project.outputs.dir }}" \
+          APK=$(find \
+            "${{ steps.android_project.outputs.dir }}" \
             -type f \
             -name "*.apk" \
             -print -quit)
 
           if [ -z "$APK" ]; then
+
             echo "ERROR: APK was not generated."
 
-            echo "Build directory:"
-            find "${{ steps.android_project.outputs.dir }}" \
-              -type f | head -200
+            echo ""
+            echo "Build files:"
+            find \
+              "${{ steps.android_project.outputs.dir }}" \
+              -type f | head -300
 
             exit 1
           fi
 
+          echo ""
           echo "APK found:"
           echo "$APK"
 
           echo "apk=$APK" >> "$GITHUB_OUTPUT"
 
-      # 11. رفع APK كـ Artifact
+
+      # ==============================
+      # 11. Show APK information
+      # ==============================
+      - name: APK information
+        shell: bash
+        run: |
+          set -e
+
+          APK="${{ steps.find_apk.outputs.apk }}"
+
+          echo "======================================"
+          echo " Study AI V10.2 APK"
+          echo "======================================"
+
+          ls -lh "$APK"
+
+          file "$APK"
+
+
+      # ==============================
+      # 12. Upload APK
+      # ==============================
       - name: Upload Study AI V10.2
         uses: actions/upload-artifact@v4
         with:
