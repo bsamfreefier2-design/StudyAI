@@ -1,8 +1,8 @@
 fastapi
 uvicorn[standard]
 python-multipart
-openai
-pydantic
 pypdf
 python-docx
 python-pptx
+Pillow
+google-genai
