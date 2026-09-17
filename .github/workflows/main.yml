@@ -1,10 +1,10 @@
-name: Build Study AI V10.4.1 Release
+name: Build Study AI V10.4.2 AI Stable
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - "StudyAI_V10_4_1_FINAL.zip"
+      - "StudyAI_V10_4_2_AI_STABLE.zip"
       - ".github/workflows/main.yml"
 
 permissions:
@@ -13,9 +13,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -30,78 +28,45 @@ jobs:
         with:
           gradle-version: "8.11.1"
 
-      - name: Find V10.4.1 project ZIP
+      - name: Find AI Stable ZIP
         id: project
         shell: bash
         run: |
           set -e
-
-          ZIP=$(find . -maxdepth 3 -type f \
-            -name "StudyAI_V10_4_1_FINAL.zip" \
-            -print -quit)
-
-          if [ -z "$ZIP" ]; then
-            echo "ERROR: StudyAI_V10_4_1_FINAL.zip not found."
-            echo "Repository files:"
-            find . -maxdepth 3 -type f | head -300
+          ZIP=$(find . -maxdepth 3 -type f -name "StudyAI_V10_4_2_AI_STABLE.zip" -print -quit)
+          test -n "$ZIP" || {
+            echo "ERROR: StudyAI_V10_4_2_AI_STABLE.zip not found."
             exit 1
-          fi
-
-          echo "Found ZIP: $ZIP"
+          }
           echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
 
       - name: Extract project
-        shell: bash
         run: |
           set -e
-
           rm -rf extracted
           mkdir -p extracted
-
           unzip -q "${{ steps.project.outputs.zip }}" -d extracted
-
-          echo "Extraction completed."
 
       - name: Find Android project
         id: android
         shell: bash
         run: |
           set -e
-
           SETTINGS=$(find extracted -type f \
-            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            \( -name settings.gradle -o -name settings.gradle.kts \) \
             -print -quit)
 
-          if [ -z "$SETTINGS" ]; then
+          test -n "$SETTINGS" || {
             echo "ERROR: Android settings.gradle not found."
-
-            echo "Extracted files:"
-            find extracted -maxdepth 8 -type f | head -500
-
             exit 1
-          fi
+          }
 
-          PROJECT_DIR=$(dirname "$SETTINGS")
-
-          echo "Android project:"
-          echo "$PROJECT_DIR"
-
-          echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+          echo "dir=$(dirname "$SETTINGS")" >> "$GITHUB_OUTPUT"
 
       - name: Prepare Gradle
-        shell: bash
         run: |
-          set -e
-
           cd "${{ steps.android.outputs.dir }}"
-
-          if [ -f gradlew ]; then
-            chmod +x gradlew
-            echo "Gradle wrapper found."
-          else
-            echo "Gradle wrapper not found."
-            echo "Using installed Gradle."
-          fi
+          test -f gradlew && chmod +x gradlew || true
 
       - name: Create release keystore
         env:
@@ -110,55 +75,33 @@ jobs:
         run: |
           set -e
 
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "ERROR: KEYSTORE_BASE64 secret is missing."
-            exit 1
-          fi
+          test -n "$KEYSTORE_BASE64"
 
           mkdir -p "$RUNNER_TEMP/studyai"
 
           echo "$KEYSTORE_BASE64" | base64 --decode \
             > "$RUNNER_TEMP/studyai/studyai-release.jks"
 
-          if [ ! -s "$RUNNER_TEMP/studyai/studyai-release.jks" ]; then
-            echo "ERROR: Keystore creation failed."
-            exit 1
-          fi
+          test -s "$RUNNER_TEMP/studyai/studyai-release.jks"
 
-          echo "Release keystore ready."
-
-      - name: Clean project
-        shell: bash
+      - name: Clean
         run: |
-          set -e
-
           cd "${{ steps.android.outputs.dir }}"
 
           if [ -f gradlew ]; then
-            ./gradlew clean \
-              --no-daemon \
-              --stacktrace
+            ./gradlew clean --no-daemon --stacktrace
           else
-            gradle clean \
-              --no-daemon \
-              --stacktrace
+            gradle clean --no-daemon --stacktrace
           fi
 
       - name: Build Release APK
-        shell: bash
         run: |
-          set -e
-
           cd "${{ steps.android.outputs.dir }}"
 
           if [ -f gradlew ]; then
-            ./gradlew assembleRelease \
-              --no-daemon \
-              --stacktrace
+            ./gradlew assembleRelease --no-daemon --stacktrace
           else
-            gradle assembleRelease \
-              --no-daemon \
-              --stacktrace
+            gradle assembleRelease --no-daemon --stacktrace
           fi
 
       - name: Find Release APK
@@ -172,21 +115,14 @@ jobs:
             -path "*/build/outputs/apk/release/*.apk" \
             -print -quit)
 
-          if [ -z "$APK" ]; then
+          test -n "$APK" || {
             echo "ERROR: Release APK not found."
-
-            find "${{ steps.android.outputs.dir }}" \
-              -type f | head -500
-
             exit 1
-          fi
-
-          echo "Release APK:"
-          echo "$APK"
+          }
 
           echo "path=$APK" >> "$GITHUB_OUTPUT"
 
-      - name: Locate Android signing tools
+      - name: Locate signing tools
         id: tools
         shell: bash
         run: |
@@ -194,30 +130,22 @@ jobs:
 
           ZIPALIGN=$(find "$ANDROID_HOME/build-tools" \
             -type f \
-            -name "zipalign" \
+            -name zipalign \
             | sort -V | tail -1)
 
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" \
             -type f \
-            -name "apksigner" \
+            -name apksigner \
             | sort -V | tail -1)
 
-          if [ -z "$ZIPALIGN" ]; then
-            echo "ERROR: zipalign not found."
-            exit 1
-          fi
-
-          if [ -z "$APKSIGNER" ]; then
-            echo "ERROR: apksigner not found."
-            exit 1
-          fi
+          test -n "$ZIPALIGN"
+          test -n "$APKSIGNER"
 
           echo "zipalign=$ZIPALIGN" >> "$GITHUB_OUTPUT"
           echo "apksigner=$APKSIGNER" >> "$GITHUB_OUTPUT"
 
-      - name: Zipalign APK
+      - name: Zipalign
         id: aligned
-        shell: bash
         run: |
           set -e
 
@@ -229,10 +157,7 @@ jobs:
             "${{ steps.apk.outputs.path }}" \
             "$OUT"
 
-          if [ ! -s "$OUT" ]; then
-            echo "ERROR: Zipalign failed."
-            exit 1
-          fi
+          test -s "$OUT"
 
           echo "path=$OUT" >> "$GITHUB_OUTPUT"
 
@@ -245,17 +170,10 @@ jobs:
         run: |
           set -e
 
-          if [ -z "$KEYSTORE_PASSWORD" ]; then
-            echo "ERROR: KEYSTORE_PASSWORD secret is missing."
-            exit 1
-          fi
+          test -n "$KEYSTORE_PASSWORD"
+          test -n "$KEY_ALIAS"
 
-          if [ -z "$KEY_ALIAS" ]; then
-            echo "ERROR: KEY_ALIAS secret is missing."
-            exit 1
-          fi
-
-          OUT="$RUNNER_TEMP/studyai/StudyAI-Universal-V10.4.1.apk"
+          OUT="$RUNNER_TEMP/studyai/StudyAI-Universal-V10.4.2.apk"
 
           "${{ steps.tools.outputs.apksigner }}" sign \
             --ks "$RUNNER_TEMP/studyai/studyai-release.jks" \
@@ -265,31 +183,20 @@ jobs:
             --out "$OUT" \
             "${{ steps.aligned.outputs.path }}"
 
-          if [ ! -s "$OUT" ]; then
-            echo "ERROR: APK signing failed."
-            exit 1
-          fi
-
-          echo "Signed APK created:"
-          echo "$OUT"
+          test -s "$OUT"
 
           echo "path=$OUT" >> "$GITHUB_OUTPUT"
 
       - name: Verify APK signature
-        shell: bash
         run: |
-          set -e
-
           "${{ steps.tools.outputs.apksigner }}" verify \
             --verbose \
             "${{ steps.signed.outputs.path }}"
 
-          echo "APK signature verified successfully."
-
       - name: Upload final APK
         uses: actions/upload-artifact@v4
         with:
-          name: StudyAI-Universal-V10.4.1
+          name: StudyAI-Universal-V10.4.2
           path: ${{ steps.signed.outputs.path }}
           if-no-files-found: error
           retention-days: 30
